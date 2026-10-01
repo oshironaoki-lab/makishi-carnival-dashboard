@@ -673,10 +673,10 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
     const n = xs.length, x = i => o.band ? m.l + iw / n * (i + 0.5) : m.l + (n === 1 ? iw / 2 : (i / (n - 1)) * iw), y = v => m.t + ih - (v / max) * ih;
     let g = yAxis(F, max, step, y, o.fmt);
     const stepX = o.band ? iw / n : n > 1 ? iw / (n - 1) : iw;
-    (o.wx || []).forEach(c => {
+    [[o.bands, "var(--band)"], [o.wx, "var(--wx-band)"]].forEach(([list, fill]) => (list || []).forEach(c => {
       const x0 = Math.max(m.l, x(c.i0) - stepX / 2), x1 = Math.min(w - m.r, x(Math.min(c.i1, n - 1)) + stepX / 2);
-      g += `<rect x="${x0}" y="${m.t}" width="${Math.max(2, x1 - x0)}" height="${ih}" fill="var(--wx-band)"/>`;
-    });
+      g += `<rect x="${x0}" y="${m.t}" width="${Math.max(2, x1 - x0)}" height="${ih}" fill="${fill}"/>`;
+    }));
     (o.camps || []).forEach(c => {
       const x0 = Math.max(m.l, x(c.i0) - stepX / 2), x1 = Math.min(w - m.r, x(Math.min(c.i1, n - 1)) + stepX / 2);
       g += `<rect x="${x0 + 1}" y="${m.t - 2}" width="${Math.max(2, x1 - x0 - 2)}" height="${ih + 2}" rx="4" fill="var(--camp-fill)" stroke="var(--target)" stroke-width="1.6" stroke-dasharray="3 3"/>`;
@@ -873,7 +873,7 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
       lineChart($("#cWkAvg"), wl, [{ name: "日平均", color: "var(--avgline)", dots: true, labels: avgs.map(man), vals: avgs }],
         { aria: "週別の日平均売上", height: 170, band: true, subs: narrowWk ? null : ws, tip: i => wtip(S.weeks[i], i) + `<b>日平均 ${yen(avgs[i])}</b>` });
       lineChart($("#cDailyCust"), S.daily.map(r => String(r.day)), [{ name: "客数", color: "var(--s3)", dots: true, vals: S.daily.map(r => r.customers) }],
-        { aria: "日別客数の折れ線グラフ", height: 130, band: true, camps: eventDeco(S, S.daily.length).camps, wx: eventDeco(S, S.daily.length).wx, labelEvery: narrow ? 2 : 1, fmt: v => int(v) + "人",
+        { aria: "日別客数の折れ線グラフ", height: 130, band: true, camps: eventDeco(S, S.daily.length).camps, bands: eventDeco(S, S.daily.length).bands, wx: eventDeco(S, S.daily.length).wx, labelEvery: narrow ? 2 : 1, fmt: v => int(v) + "人",
           tip: i => { const r = S.daily[i]; return `${md(r.dt)}（${DOW[r.dow]}${r.holiday ? "・祝" : ""}）<br><b>客数 ${int(r.customers)}人</b><br>売上 ${yen(r.sales)}・客単価 ${yen(r.customers ? r.sales / r.customers : 0)}`; } });
       barChart($("#cDow"), S.buckets.filter(b => b.n).map(b => ({ label: b.key, sub: b.n + "日", value: b.avg, we: b.we,
         tip: `${b.key === "祝" ? "祝日" : b.key + "曜日"}（${b.n}日）<br><b>平均 ${yen(b.avg)}</b><br>平均客数 ${int(b.avgCust)}人` })),
