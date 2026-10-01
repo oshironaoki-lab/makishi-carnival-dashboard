@@ -1,4 +1,3 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>MAKISHI CARNIVAL 売上管理</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -121,9 +120,15 @@ summary { cursor: pointer; color: var(--accent); font-weight: 700; }
 @media (prefers-reduced-motion: no-preference) { .store .bar span { transition: width .4s ease; } }
 </style>
 <style>
-:root { --band: #fdeef1; --camp-fill: rgba(227, 73, 72, .04); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --band: #33232a; } }
-:root[data-theme="dark"] { --band: #33232a; }
+:root { --band: #fdeef1; --camp-fill: rgba(227, 73, 72, .04); --wx-band: #dcebfb; --wx: #1f6fd1; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --band: #33232a; --wx-band: #19304a; --wx: #5aa2f0; } }
+:root[data-theme="dark"] { --band: #33232a; --wx-band: #19304a; --wx: #5aa2f0; }
+/* 天候（台風など）：青い帯・青い番号 */
+.mk.wx, .gkey .mk.wx, .legend .mk.wx, .evs .mk.wx { background: var(--wx); color: #ffffff; }
+.evk.wx { background: var(--wx-band); color: var(--wx); font-weight: 700; }
+.heat th.d.wx { background: var(--wx-band); color: var(--wx); font-weight: 700; }
+.legend i.wxk, .gkey .sw.wxk { background: var(--wx-band); }
+.wxd { background: var(--wx-band); color: var(--wx); padding: 0 3px; border-radius: 3px; }
 :root { --h1: #cde2fb; --h2: #86b6ef; --h3: #3987e5; --h4: #1c5cab; --h5: #0d366b; --h-ink: #ffffff; --prev: #9aa6ae; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --h1: #0d366b; --h2: #184f95; --h3: #256abf; --h4: #5598e7; --h5: #9ec5f4; --h-ink: #0f151a; --prev: #6c7a84; } }
 :root[data-theme="dark"] { --h1: #0d366b; --h2: #184f95; --h3: #256abf; --h4: #5598e7; --h5: #9ec5f4; --h-ink: #0f151a; --prev: #6c7a84; }
@@ -408,6 +413,7 @@ details.fold > form { margin-top: 10px; padding: 12px; border-radius: 10px; back
             <li><i class="sw" style="background:var(--s1)"></i>平日　<i class="sw" style="background:var(--s2)"></i>土日・祝日</li>
             <li><i class="sw ln" style="background:var(--target)"></i>赤い実線：目標　<i class="sw campk"></i>赤い点線の枠と赤い番号：販促キャンペーン期間</li>
             <li><i class="sw" style="background:var(--band);box-shadow:inset 0 0 0 1px var(--line)"></i>ピンクの帯：連休など　<i class="mk">1</i>番号：暦・トピックス</li>
+            <li><i class="sw wxk"></i><i class="mk wx">1</i>青い帯と青い番号：天候（台風など）</li>
           </ul>
         </div>
         <div class="gcol">
@@ -555,11 +561,13 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
   // chart decorations for calendar events: bands for multi-day spans, numbered markers on each event's first day
   function eventDeco(S, nDays) {
     const span = e => ({ i0: parseDate(e.date).getDate() - 1, i1: Math.min(nDays, parseDate(e.to || e.date).getDate()) - 1 });
-    const bands = S.events.filter(e => e.to && e.kind !== "campaign").map(span);
+    const bands = S.events.filter(e => e.to && e.kind !== "campaign" && e.kind !== "weather").map(span);
+    const wx = S.events.filter(e => e.kind === "weather").map(e => ({ ...span(e), n: e.n })).filter(c => c.i0 < nDays);
     const camps = S.events.filter(e => e.kind === "campaign").map(e => ({ ...span(e), n: e.n })).filter(c => c.i0 < nDays);
     const byStart = {};
+    const wxN = new Set(wx.map(c => c.n));
     S.events.filter(e => e.kind !== "campaign").forEach(e => { const i = parseDate(e.date).getDate() - 1; if (i < nDays) (byStart[i] = byStart[i] || []).push(e.n); });
-    return { bands, camps, marks: Object.entries(byStart).map(([i, ns]) => ({ i: +i, text: ns.join("·") })) };
+    return { bands, camps, wx, marks: Object.entries(byStart).map(([i, ns]) => ({ i: +i, text: ns.join("·"), wx: ns.every(n => wxN.has(n)) })) };
   }
   const evTip = (S, day) => (S.evByDay[day] || []).map(e => `<br><span class="ev">◆ ${esc(e.label)}</span>`).join("");
   const evText = e => `${md(parseDate(e.date))}${e.to ? "〜" + md(parseDate(e.to)) : ""}`;
@@ -608,23 +616,25 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
     const bw = iw / items.length, barW = Math.max(3, Math.min(bw - 2, o.maxBar || 40));
     let g = "";
     (o.bands || []).forEach(b => { g += `<rect x="${m.l + bw * b.i0}" y="${m.t}" width="${bw * (b.i1 - b.i0 + 1)}" height="${ih}" fill="var(--band)"/>`; });
+    (o.wx || []).forEach(b => { g += `<rect x="${m.l + bw * b.i0}" y="${m.t}" width="${bw * (b.i1 - b.i0 + 1)}" height="${ih}" fill="var(--wx-band)"/>`; });
     g += yAxis(F, max, step, y, o.fmt);
     const pillW = t => Math.max(17, 6.5 * t.length + 9);
     const groups = [];
     (o.marks || []).slice().sort((a, b) => a.i - b.i).forEach(k => {
       const cx = m.l + bw * k.i + bw / 2, last = groups[groups.length - 1];
-      if (last && cx - last.xs[last.xs.length - 1] < pillW(last.parts.join("·")) / 2 + pillW(k.text) / 2 + 2) { last.xs.push(cx); last.parts.push(k.text); }
-      else groups.push({ xs: [cx], parts: [k.text] });
+      if (last && cx - last.xs[last.xs.length - 1] < pillW(last.parts.join("·")) / 2 + pillW(k.text) / 2 + 2) { last.xs.push(cx); last.parts.push(k.text); last.wx = last.wx && k.wx; }
+      else groups.push({ xs: [cx], parts: [k.text], wx: !!k.wx });
     });
     groups.forEach(gp => {
       const nums = gp.parts.join("·").split("·").map(Number);
       const run = nums.every((v, j) => !j || v === nums[j - 1] + 1);
       const text = nums.length > 2 && run ? nums[0] + "–" + nums[nums.length - 1] : nums.join("·");
       const pw = pillW(text), cx = Math.min(Math.max((gp.xs[0] + gp.xs[gp.xs.length - 1]) / 2, m.l + pw / 2), w - m.r - pw / 2);
-      gp.xs.forEach(x => { g += `<line x1="${x}" x2="${x}" y1="20" y2="${m.t}" stroke="var(--accent)" stroke-width="1"/>`; });
-      if (gp.xs.length > 1) g += `<line x1="${gp.xs[0]}" x2="${gp.xs[gp.xs.length - 1]}" y1="20" y2="20" stroke="var(--accent)" stroke-width="1"/>`;
-      g += `<rect x="${cx - pw / 2}" y="3" width="${pw}" height="17" rx="8.5" fill="var(--accent)"/>`;
-      g += `<text x="${cx}" y="15.5" text-anchor="middle" style="fill:var(--surface);font-weight:700;font-size:10px">${esc(text)}</text>`;
+      const mc = gp.wx ? "var(--wx)" : "var(--accent)";
+      gp.xs.forEach(x => { g += `<line x1="${x}" x2="${x}" y1="20" y2="${m.t}" stroke="${mc}" stroke-width="1"/>`; });
+      if (gp.xs.length > 1) g += `<line x1="${gp.xs[0]}" x2="${gp.xs[gp.xs.length - 1]}" y1="20" y2="20" stroke="${mc}" stroke-width="1"/>`;
+      g += `<rect x="${cx - pw / 2}" y="3" width="${pw}" height="17" rx="8.5" fill="${mc}"/>`;
+      g += `<text x="${cx}" y="15.5" text-anchor="middle" style="fill:${gp.wx ? "#ffffff" : "var(--surface)"};font-weight:700;font-size:10px">${esc(text)}</text>`;
     });
     if (o.avg) {
       g += `<line x1="${m.l}" x2="${w - m.r}" y1="${y(o.avg)}" y2="${y(o.avg)}" stroke="var(--ink-2)" stroke-width="1" stroke-dasharray="4 3"/>`;
@@ -663,6 +673,10 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
     const n = xs.length, x = i => o.band ? m.l + iw / n * (i + 0.5) : m.l + (n === 1 ? iw / 2 : (i / (n - 1)) * iw), y = v => m.t + ih - (v / max) * ih;
     let g = yAxis(F, max, step, y, o.fmt);
     const stepX = o.band ? iw / n : n > 1 ? iw / (n - 1) : iw;
+    (o.wx || []).forEach(c => {
+      const x0 = Math.max(m.l, x(c.i0) - stepX / 2), x1 = Math.min(w - m.r, x(Math.min(c.i1, n - 1)) + stepX / 2);
+      g += `<rect x="${x0}" y="${m.t}" width="${Math.max(2, x1 - x0)}" height="${ih}" fill="var(--wx-band)"/>`;
+    });
     (o.camps || []).forEach(c => {
       const x0 = Math.max(m.l, x(c.i0) - stepX / 2), x1 = Math.min(w - m.r, x(Math.min(c.i1, n - 1)) + stepX / 2);
       g += `<rect x="${x0 + 1}" y="${m.t - 2}" width="${Math.max(2, x1 - x0 - 2)}" height="${ih + 2}" rx="4" fill="var(--camp-fill)" stroke="var(--target)" stroke-width="1.6" stroke-dasharray="3 3"/>`;
@@ -728,7 +742,7 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
       ${form}</div>`;
   }
   function evPanel(S) {
-    const items = S.events.filter(e => e.kind !== "campaign").map(e => `<li><span class="mk">${e.n}</span><span class="evd">${evText(e)}</span><span class="evl">${esc(e.label)}</span><span class="evx"><span class="evk${e.kind === "campaign" ? " camp" : ""}">${KIND[e.kind] || "トピック"}</span>${canEdit ? `<button type="button" class="evdel" data-del="${e._i}" aria-label="${esc(e.label)}を削除">削除</button>` : ""}</span></li>`).join("");
+    const items = S.events.filter(e => e.kind !== "campaign").map(e => `<li><span class="mk${e.kind === "weather" ? " wx" : ""}">${e.n}</span><span class="evd">${evText(e)}</span><span class="evl">${esc(e.label)}</span><span class="evx"><span class="evk${e.kind === "campaign" ? " camp" : e.kind === "weather" ? " wx" : ""}">${KIND[e.kind] || "トピック"}</span>${canEdit ? `<button type="button" class="evdel" data-del="${e._i}" aria-label="${esc(e.label)}を削除">削除</button>` : ""}</span></li>`).join("");
     const [y, m] = S.id.split("-"), last = String(daysIn(S.id)).padStart(2, "0");
     const form = canEdit ? `<details class="evform fold"><summary>＋ 暦・トピックスを追加</summary>
       <form id="evForm">
@@ -816,7 +830,7 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
       ${pointsStrip(S)}
       <section class="card">
         <h2>日別売上 <span class="note">バーに触れると詳細</span></h2>
-        <div class="legend"><span><i style="background:var(--s1)"></i>平日</span><span><i style="background:var(--s2)"></i>土日・祝日</span><span>– – 1日平均 ${man(S.perDay)}</span>${S.target ? `<span><i class="ln" style="background:var(--target)"></i>目標日販 ${man(S.dailyTarget)}</span>` : ""}<span><i style="background:var(--band);box-shadow:inset 0 0 0 1px var(--line)"></i>連休など</span>${S.events.some(e => e.kind === "campaign") ? `<span><i class="campk"></i>販促キャンペーン期間</span>` : ""}<span><i class="mk">1</i>暦・トピックス</span></div>
+        <div class="legend"><span><i style="background:var(--s1)"></i>平日</span><span><i style="background:var(--s2)"></i>土日・祝日</span><span>– – 1日平均 ${man(S.perDay)}</span>${S.target ? `<span><i class="ln" style="background:var(--target)"></i>目標日販 ${man(S.dailyTarget)}</span>` : ""}<span><i style="background:var(--band);box-shadow:inset 0 0 0 1px var(--line)"></i>連休など</span>${S.events.some(e => e.kind === "campaign") ? `<span><i class="campk"></i>販促キャンペーン期間</span>` : ""}${S.events.some(e => e.kind === "weather") ? `<span><i class="wxk"></i><i class="mk wx">1</i>天候（台風など）</span>` : ""}<span><i class="mk">1</i>暦・トピックス</span></div>
         <div class="chart" id="cDaily"></div>
         <div class="subchart"><h3><i class="ln" style="background:var(--s3)"></i>日別客数 <span class="note">月平均 ${int(S.cust / Math.max(1, S.daily.length))}人/日・上の売上と日付をそろえて表示</span></h3><div class="chart" id="cDailyCust"></div></div>
         ${targetBox(S)}
@@ -859,7 +873,7 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
       lineChart($("#cWkAvg"), wl, [{ name: "日平均", color: "var(--avgline)", dots: true, labels: avgs.map(man), vals: avgs }],
         { aria: "週別の日平均売上", height: 170, band: true, subs: narrowWk ? null : ws, tip: i => wtip(S.weeks[i], i) + `<b>日平均 ${yen(avgs[i])}</b>` });
       lineChart($("#cDailyCust"), S.daily.map(r => String(r.day)), [{ name: "客数", color: "var(--s3)", dots: true, vals: S.daily.map(r => r.customers) }],
-        { aria: "日別客数の折れ線グラフ", height: 130, band: true, camps: eventDeco(S, S.daily.length).camps, labelEvery: narrow ? 2 : 1, fmt: v => int(v) + "人",
+        { aria: "日別客数の折れ線グラフ", height: 130, band: true, camps: eventDeco(S, S.daily.length).camps, wx: eventDeco(S, S.daily.length).wx, labelEvery: narrow ? 2 : 1, fmt: v => int(v) + "人",
           tip: i => { const r = S.daily[i]; return `${md(r.dt)}（${DOW[r.dow]}${r.holiday ? "・祝" : ""}）<br><b>客数 ${int(r.customers)}人</b><br>売上 ${yen(r.sales)}・客単価 ${yen(r.customers ? r.sales / r.customers : 0)}`; } });
       barChart($("#cDow"), S.buckets.filter(b => b.n).map(b => ({ label: b.key, sub: b.n + "日", value: b.avg, we: b.we,
         tip: `${b.key === "祝" ? "祝日" : b.key + "曜日"}（${b.n}日）<br><b>平均 ${yen(b.avg)}</b><br>平均客数 ${int(b.avgCust)}人` })),
@@ -888,7 +902,8 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
     const cellMax = Math.max(1, ...have.flatMap(d => active.map(s => val(s.code, d)?.s || 0)));
     const bin = v => v <= 0 ? "var(--grid)" : `var(--h${Math.min(5, 1 + Math.floor(v / cellMax * 5))})`;
     const campDay = d => S.events.some(e => e.kind === "campaign" && key(d) >= e.date && key(d) <= (e.to || e.date));
-    const head = days.map(d => `<th class="d${isWe(d) ? " we" : ""}${campDay(d) ? " cp" : ""}"${campDay(d) ? ' title="販促キャンペーン期間"' : ""}>${d}</th>`).join("");
+    const wxDay = d => S.events.some(e => e.kind === "weather" && key(d) >= e.date && key(d) <= (e.to || e.date));
+    const head = days.map(d => `<th class="d${isWe(d) ? " we" : ""}${campDay(d) ? " cp" : ""}${wxDay(d) ? " wx" : ""}"${campDay(d) || wxDay(d) ? ` title="${[campDay(d) ? "販促キャンペーン期間" : "", wxDay(d) ? "天候（台風など）" : ""].filter(Boolean).join("・")}"` : ""}>${d}</th>`).join("");
     const rows = active.map(s => `<tr><th class="st" title="${esc(s.name)}">${esc(s.name)}</th>${days.map(d => {
       if (!S.sd[key(d)]) return `<td class="c na" data-t="${esc(s.name)}｜${mm}/${d}<br>店舗別データ未取得"></td>`;
       const v = val(s.code, d);
@@ -922,13 +937,13 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
           </div>
           <span class="foot">${storeScale === "own" ? "各店の動きの形を比べやすい" : "店舗間の売上規模を比べやすい"}</span>
         </div>
-        <div class="legend"><span><i style="background:var(--s1)"></i>平日</span><span><i style="background:var(--s2)"></i>土日・祝日</span><span>— 未取得の日</span>${S.events.some(e => e.kind === "campaign") ? `<span><i class="campk"></i>販促キャンペーン期間</span>` : ""}</div>
+        <div class="legend"><span><i style="background:var(--s1)"></i>平日</span><span><i style="background:var(--s2)"></i>土日・祝日</span><span>— 未取得の日</span>${S.events.some(e => e.kind === "campaign") ? `<span><i class="campk"></i>販促キャンペーン期間</span>` : ""}${S.events.some(e => e.kind === "weather") ? `<span><i class="wxk"></i>天候（台風など）</span>` : ""}</div>
         ${coverage}
         <div class="multiples">${minis}</div>
       </section>
       <section class="card">
         <h2>全店舗×日別ヒートマップ <span class="note">色が濃いほど売上が大きい</span></h2>
-        <div class="scale"><span>少</span>${[1, 2, 3, 4, 5].map(i => `<i style="background:var(--h${i})" title="${man(step * (i - 1))}〜${man(step * i)}"></i>`).join("")}<span>多（最大 ${man(cellMax)}）</span><span style="margin-left:10px"><i style="box-shadow:inset 0 0 0 1px var(--line)"></i> 未取得</span>${S.events.some(e => e.kind === "campaign") ? `<span style="margin-left:10px"><u class="cpu">日付</u> 販促キャンペーン期間</span>` : ""}</div>
+        <div class="scale"><span>少</span>${[1, 2, 3, 4, 5].map(i => `<i style="background:var(--h${i})" title="${man(step * (i - 1))}〜${man(step * i)}"></i>`).join("")}<span>多（最大 ${man(cellMax)}）</span><span style="margin-left:10px"><i style="box-shadow:inset 0 0 0 1px var(--line)"></i> 未取得</span>${S.events.some(e => e.kind === "campaign") ? `<span style="margin-left:10px"><u class="cpu">日付</u> 販促キャンペーン期間</span>` : ""}${S.events.some(e => e.kind === "weather") ? `<span style="margin-left:10px"><b class="wxd">日付</b> 天候（台風など）</span>` : ""}</div>
         <div class="heat chart" id="heat"><table><thead><tr><th class="st"></th>${head}</tr></thead><tbody>${rows}</tbody></table><div class="tip" hidden></div></div>
       </section>`;
     const after = () => {
@@ -936,7 +951,7 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
         barChart($("#mini-" + i), days.map(d => { const v = S.sd[key(d)] ? (val(st.code, d) || { s: 0, c: 0 }) : null; const dw = new Date(yy, mm - 1, d).getDay();
           return { label: String(d), value: v ? v.s : null, we: isWe(d),
             tip: v ? `${esc(st.name)}｜${mm}/${d}（${DOW[dw]}）<br><b>${yen(v.s)}</b><br>客数 ${int(v.c)}人・客単価 ${yen(v.c ? v.s / v.c : 0)}${evTip(S, d)}` : `${esc(st.name)}｜${mm}/${d}（${DOW[dw]}）<br>店舗別データ未取得${evTip(S, d)}` }; }),
-          { aria: st.name + "の日別売上", height: 120, labelEvery: 5, steps: 2, bands: eventDeco(S, days.length).bands, camps: eventDeco(S, days.length).camps, campLabels: false, max: storeScale === "shared" ? cellMax : null });
+          { aria: st.name + "の日別売上", height: 120, labelEvery: 5, steps: 2, bands: eventDeco(S, days.length).bands, wx: eventDeco(S, days.length).wx, camps: eventDeco(S, days.length).camps, campLabels: false, max: storeScale === "shared" ? cellMax : null });
       });
       const hm = $("#heat"), tip = $(".tip", hm);
       hm.addEventListener("pointerover", e => {
@@ -1006,7 +1021,7 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
       if (prv) series.push({ name: "前月", color: "var(--prev)", dash: "2 3", vals: prv });
       if (tgt) series.push({ name: "目標", color: "var(--target)", dash: "7 4", vals: tgt });
       series.push({ name: "当月", color: "var(--s1)", area: true, vals: cur });
-      lineChart($("#cCum"), xs, series, { aria: "月累計の推移", height: 230, camps: eventDeco(S, n).camps, labelEvery: $("#cCum").clientWidth < 520 ? 4 : 2, endLabel: man(S.sales),
+      lineChart($("#cCum"), xs, series, { aria: "月累計の推移", height: 230, camps: eventDeco(S, n).camps, wx: eventDeco(S, n).wx, labelEvery: $("#cCum").clientWidth < 520 ? 4 : 2, endLabel: man(S.sales),
         tip: i => `${i + 1}日時点<br><b>${cur[i] != null ? yen(cur[i]) : "—"}</b>${tgt ? `<br>目標ライン ${yen(tgt[i])}${cur[i] != null ? `（${cur[i] >= tgt[i] ? "+" : "−"}${yen(Math.abs(cur[i] - tgt[i]))}）` : ""}` : ""}${prv && prv[i] != null ? `<br>前月同日 ${yen(prv[i])}` : ""}` });
     };
     return { html, after };
