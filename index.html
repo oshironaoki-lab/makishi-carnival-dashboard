@@ -120,14 +120,15 @@ summary { cursor: pointer; color: var(--accent); font-weight: 700; }
 @media (prefers-reduced-motion: no-preference) { .store .bar span { transition: width .4s ease; } }
 </style>
 <style>
-:root { --band: #fdeef1; --camp-fill: rgba(227, 73, 72, .04); --wx-band: #dcebfb; --wx: #1f6fd1; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --band: #33232a; --wx-band: #19304a; --wx: #5aa2f0; } }
-:root[data-theme="dark"] { --band: #33232a; --wx-band: #19304a; --wx: #5aa2f0; }
+:root { --band: #fdeef1; --camp-fill: rgba(227, 73, 72, .04); --wx-band: #dcebfb; --wx: #1f6fd1; --ov-pink: #f8d3dc; --ov-blue: #b9d6f6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --band: #33232a; --wx-band: #19304a; --wx: #5aa2f0; --ov-pink: #4a2a35; --ov-blue: #1f3f63; } }
+:root[data-theme="dark"] { --band: #33232a; --wx-band: #19304a; --wx: #5aa2f0; --ov-pink: #4a2a35; --ov-blue: #1f3f63; }
 /* 天候（台風など）：青い帯・青い番号 */
 .mk.wx, .gkey .mk.wx, .legend .mk.wx, .evs .mk.wx { background: var(--wx); color: #ffffff; }
 .evk.wx { background: var(--wx-band); color: var(--wx); font-weight: 700; }
 .heat th.d.wx { background: var(--wx-band); color: var(--wx); font-weight: 700; }
 .legend i.wxk, .gkey .sw.wxk { background: var(--wx-band); }
+.legend i.ovk, .gkey .sw.ovk { background: repeating-linear-gradient(45deg, var(--ov-blue) 0 3px, var(--ov-pink) 3px 6px); }
 .wxd { background: var(--wx-band); color: var(--wx); padding: 0 3px; border-radius: 3px; }
 :root { --h1: #cde2fb; --h2: #86b6ef; --h3: #3987e5; --h4: #1c5cab; --h5: #0d366b; --h-ink: #ffffff; --prev: #9aa6ae; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --h1: #0d366b; --h2: #184f95; --h3: #256abf; --h4: #5598e7; --h5: #9ec5f4; --h-ink: #0f151a; --prev: #6c7a84; } }
@@ -413,7 +414,7 @@ details.fold > form { margin-top: 10px; padding: 12px; border-radius: 10px; back
             <li><i class="sw" style="background:var(--s1)"></i>平日　<i class="sw" style="background:var(--s2)"></i>土日・祝日</li>
             <li><i class="sw ln" style="background:var(--target)"></i>赤い実線：目標　<i class="sw campk"></i>赤い点線の枠と赤い番号：販促キャンペーン期間</li>
             <li><i class="sw" style="background:var(--band);box-shadow:inset 0 0 0 1px var(--line)"></i>ピンクの帯：連休など　<i class="mk">1</i>番号：暦・トピックス</li>
-            <li><i class="sw wxk"></i><i class="mk wx">1</i>青い帯と青い番号：天候（台風など）</li>
+            <li><i class="sw wxk"></i><i class="mk wx">1</i>青い帯と青い番号：天候（台風など）　<i class="sw ovk"></i>ピンクと青の縞：連休と天候が重なる日</li>
           </ul>
         </div>
         <div class="gcol">
@@ -565,9 +566,28 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
     const wx = S.events.filter(e => e.kind === "weather").map(e => ({ ...span(e), n: e.n })).filter(c => c.i0 < nDays);
     const camps = S.events.filter(e => e.kind === "campaign").map(e => ({ ...span(e), n: e.n })).filter(c => c.i0 < nDays);
     const byStart = {};
-    const wxN = new Set(wx.map(c => c.n));
-    S.events.filter(e => e.kind !== "campaign").forEach(e => { const i = parseDate(e.date).getDate() - 1; if (i < nDays) (byStart[i] = byStart[i] || []).push(e.n); });
-    return { bands, camps, wx, marks: Object.entries(byStart).map(([i, ns]) => ({ i: +i, text: ns.join("·"), wx: ns.every(n => wxN.has(n)) })) };
+    S.events.filter(e => e.kind !== "campaign").forEach(e => { const i = parseDate(e.date).getDate() - 1, k = i + (e.kind === "weather" ? "w" : "o"); if (i < nDays) (byStart[k] = byStart[k] || []).push(e.n); });
+    return { bands, camps, wx, marks: Object.entries(byStart).map(([k, ns]) => ({ i: parseInt(k), text: ns.join("·"), wx: k.endsWith("w") })).sort((a, b) => a.i - b.i || parseInt(a.text) - parseInt(b.text)) };
+  }
+  // 連休（ピンク）と天候（青）の帯。重なる日は自動でピンクと青の斜めの縞にする
+  let bandSeq = 0;
+  function bandRects(bands, wx, n, xL, xR, y, hgt) {
+    const st = Array(n).fill(0);
+    (bands || []).forEach(b => { for (let i = Math.max(0, b.i0); i <= Math.min(n - 1, b.i1); i++) st[i] |= 1; });
+    (wx || []).forEach(b => { for (let i = Math.max(0, b.i0); i <= Math.min(n - 1, b.i1); i++) st[i] |= 2; });
+    const id = "ovl" + (++bandSeq);
+    let g = st.includes(3) ? `<defs><pattern id="${id}" patternUnits="userSpaceOnUse" width="10" height="10" patternTransform="rotate(45)"><rect width="10" height="10" fill="var(--ov-pink)"/><rect width="5" height="10" fill="var(--ov-blue)"/></pattern></defs>` : "";
+    for (let i = 0; i < n;) {
+      let j = i; while (j + 1 < n && st[j + 1] === st[i]) j++;
+      if (st[i]) g += `<rect x="${xL(i)}" y="${y}" width="${Math.max(1, xR(j) - xL(i))}" height="${hgt}" fill="${st[i] === 3 ? `url(#${id})` : st[i] === 2 ? "var(--wx-band)" : "var(--band)"}"/>`;
+      i = j + 1;
+    }
+    return g;
+  }
+  function bandOverlap(S, n) {
+    const d = eventDeco(S, n); let hit = false;
+    (d.bands || []).forEach(b => (d.wx || []).forEach(w => { if (b.i0 <= w.i1 && w.i0 <= b.i1) hit = true; }));
+    return hit;
   }
   const evTip = (S, day) => (S.evByDay[day] || []).map(e => `<br><span class="ev">◆ ${esc(e.label)}</span>`).join("");
   const evText = e => `${md(parseDate(e.date))}${e.to ? "〜" + md(parseDate(e.to)) : ""}`;
@@ -615,24 +635,26 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
     const y = v => m.t + ih - (v / max) * ih;
     const bw = iw / items.length, barW = Math.max(3, Math.min(bw - 2, o.maxBar || 40));
     let g = "";
-    (o.bands || []).forEach(b => { g += `<rect x="${m.l + bw * b.i0}" y="${m.t}" width="${bw * (b.i1 - b.i0 + 1)}" height="${ih}" fill="var(--band)"/>`; });
-    (o.wx || []).forEach(b => { g += `<rect x="${m.l + bw * b.i0}" y="${m.t}" width="${bw * (b.i1 - b.i0 + 1)}" height="${ih}" fill="var(--wx-band)"/>`; });
+    g += bandRects(o.bands, o.wx, items.length, i => m.l + bw * i, j => m.l + bw * (j + 1), m.t, ih);
     g += yAxis(F, max, step, y, o.fmt);
     const pillW = t => Math.max(17, 6.5 * t.length + 9);
     const groups = [];
     (o.marks || []).slice().sort((a, b) => a.i - b.i).forEach(k => {
       const cx = m.l + bw * k.i + bw / 2, last = groups[groups.length - 1];
-      if (last && cx - last.xs[last.xs.length - 1] < pillW(last.parts.join("·")) / 2 + pillW(k.text) / 2 + 2) { last.xs.push(cx); last.parts.push(k.text); last.wx = last.wx && k.wx; }
+      if (last && last.wx === !!k.wx && cx - last.xs[last.xs.length - 1] < pillW(last.parts.join("·")) / 2 + pillW(k.text) / 2 + 2) { last.xs.push(cx); last.parts.push(k.text); }
       else groups.push({ xs: [cx], parts: [k.text], wx: !!k.wx });
     });
+    let prevR = -Infinity;
     groups.forEach(gp => {
       const nums = gp.parts.join("·").split("·").map(Number);
       const run = nums.every((v, j) => !j || v === nums[j - 1] + 1);
       const text = nums.length > 2 && run ? nums[0] + "–" + nums[nums.length - 1] : nums.join("·");
-      const pw = pillW(text), cx = Math.min(Math.max((gp.xs[0] + gp.xs[gp.xs.length - 1]) / 2, m.l + pw / 2), w - m.r - pw / 2);
+      const pw = pillW(text), cx = Math.min(Math.max((gp.xs[0] + gp.xs[gp.xs.length - 1]) / 2, m.l + pw / 2, prevR + pw / 2 + 2), w - m.r - pw / 2);
+      prevR = cx + pw / 2;
       const mc = gp.wx ? "var(--wx)" : "var(--accent)";
       gp.xs.forEach(x => { g += `<line x1="${x}" x2="${x}" y1="20" y2="${m.t}" stroke="${mc}" stroke-width="1"/>`; });
-      if (gp.xs.length > 1) g += `<line x1="${gp.xs[0]}" x2="${gp.xs[gp.xs.length - 1]}" y1="20" y2="20" stroke="${mc}" stroke-width="1"/>`;
+      const lx0 = Math.min(gp.xs[0], cx), lx1 = Math.max(gp.xs[gp.xs.length - 1], cx);
+      if (lx1 > lx0) g += `<line x1="${lx0}" x2="${lx1}" y1="20" y2="20" stroke="${mc}" stroke-width="1"/>`;
       g += `<rect x="${cx - pw / 2}" y="3" width="${pw}" height="17" rx="8.5" fill="${mc}"/>`;
       g += `<text x="${cx}" y="15.5" text-anchor="middle" style="fill:${gp.wx ? "#ffffff" : "var(--surface)"};font-weight:700;font-size:10px">${esc(text)}</text>`;
     });
@@ -673,10 +695,7 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
     const n = xs.length, x = i => o.band ? m.l + iw / n * (i + 0.5) : m.l + (n === 1 ? iw / 2 : (i / (n - 1)) * iw), y = v => m.t + ih - (v / max) * ih;
     let g = yAxis(F, max, step, y, o.fmt);
     const stepX = o.band ? iw / n : n > 1 ? iw / (n - 1) : iw;
-    [[o.bands, "var(--band)"], [o.wx, "var(--wx-band)"]].forEach(([list, fill]) => (list || []).forEach(c => {
-      const x0 = Math.max(m.l, x(c.i0) - stepX / 2), x1 = Math.min(w - m.r, x(Math.min(c.i1, n - 1)) + stepX / 2);
-      g += `<rect x="${x0}" y="${m.t}" width="${Math.max(2, x1 - x0)}" height="${ih}" fill="${fill}"/>`;
-    }));
+    g += bandRects(o.bands, o.wx, n, i => Math.max(m.l, x(i) - stepX / 2), j => Math.min(w - m.r, x(j) + stepX / 2), m.t, ih);
     (o.camps || []).forEach(c => {
       const x0 = Math.max(m.l, x(c.i0) - stepX / 2), x1 = Math.min(w - m.r, x(Math.min(c.i1, n - 1)) + stepX / 2);
       g += `<rect x="${x0 + 1}" y="${m.t - 2}" width="${Math.max(2, x1 - x0 - 2)}" height="${ih + 2}" rx="4" fill="var(--camp-fill)" stroke="var(--target)" stroke-width="1.6" stroke-dasharray="3 3"/>`;
@@ -830,7 +849,7 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
       ${pointsStrip(S)}
       <section class="card">
         <h2>日別売上 <span class="note">バーに触れると詳細</span></h2>
-        <div class="legend"><span><i style="background:var(--s1)"></i>平日</span><span><i style="background:var(--s2)"></i>土日・祝日</span><span>– – 1日平均 ${man(S.perDay)}</span>${S.target ? `<span><i class="ln" style="background:var(--target)"></i>目標日販 ${man(S.dailyTarget)}</span>` : ""}<span><i style="background:var(--band);box-shadow:inset 0 0 0 1px var(--line)"></i>連休など</span>${S.events.some(e => e.kind === "campaign") ? `<span><i class="campk"></i>販促キャンペーン期間</span>` : ""}${S.events.some(e => e.kind === "weather") ? `<span><i class="wxk"></i><i class="mk wx">1</i>天候（台風など）</span>` : ""}<span><i class="mk">1</i>暦・トピックス</span></div>
+        <div class="legend"><span><i style="background:var(--s1)"></i>平日</span><span><i style="background:var(--s2)"></i>土日・祝日</span><span>– – 1日平均 ${man(S.perDay)}</span>${S.target ? `<span><i class="ln" style="background:var(--target)"></i>目標日販 ${man(S.dailyTarget)}</span>` : ""}<span><i style="background:var(--band);box-shadow:inset 0 0 0 1px var(--line)"></i>連休など</span>${S.events.some(e => e.kind === "campaign") ? `<span><i class="campk"></i>販促キャンペーン期間</span>` : ""}${S.events.some(e => e.kind === "weather") ? `<span><i class="wxk"></i><i class="mk wx">1</i>天候（台風など）</span>` : ""}${bandOverlap(S, S.daily.length) ? `<span><i class="ovk"></i>連休と天候が重なる日</span>` : ""}<span><i class="mk">1</i>暦・トピックス</span></div>
         <div class="chart" id="cDaily"></div>
         <div class="subchart"><h3><i class="ln" style="background:var(--s3)"></i>日別客数 <span class="note">月平均 ${int(S.cust / Math.max(1, S.daily.length))}人/日・上の売上と日付をそろえて表示</span></h3><div class="chart" id="cDailyCust"></div></div>
         ${targetBox(S)}
@@ -937,7 +956,7 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
           </div>
           <span class="foot">${storeScale === "own" ? "各店の動きの形を比べやすい" : "店舗間の売上規模を比べやすい"}</span>
         </div>
-        <div class="legend"><span><i style="background:var(--s1)"></i>平日</span><span><i style="background:var(--s2)"></i>土日・祝日</span><span>— 未取得の日</span>${S.events.some(e => e.kind === "campaign") ? `<span><i class="campk"></i>販促キャンペーン期間</span>` : ""}${S.events.some(e => e.kind === "weather") ? `<span><i class="wxk"></i>天候（台風など）</span>` : ""}</div>
+        <div class="legend"><span><i style="background:var(--s1)"></i>平日</span><span><i style="background:var(--s2)"></i>土日・祝日</span><span>— 未取得の日</span>${S.events.some(e => e.kind === "campaign") ? `<span><i class="campk"></i>販促キャンペーン期間</span>` : ""}${S.events.some(e => e.kind === "weather") ? `<span><i class="wxk"></i>天候（台風など）</span>` : ""}${bandOverlap(S, days.length) ? `<span><i class="ovk"></i>連休と天候が重なる日</span>` : ""}</div>
         ${coverage}
         <div class="multiples">${minis}</div>
       </section>
