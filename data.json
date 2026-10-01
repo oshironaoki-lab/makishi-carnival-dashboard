@@ -295,6 +295,11 @@
     "date": "2026-09-25",
     "kind": "event",
     "label": "十五夜（中秋の名月）"
+   },
+   {
+    "date": "2026-09-24",
+    "label": "台風",
+    "kind": "weather"
    }
   ],
   "holidays": [
