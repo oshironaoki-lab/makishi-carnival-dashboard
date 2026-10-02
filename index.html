@@ -129,6 +129,10 @@ summary { cursor: pointer; color: var(--accent); font-weight: 700; }
 .heat th.d.wx { background: var(--wx-band); color: var(--wx); font-weight: 700; }
 .legend i.wxk, .gkey .sw.wxk { background: var(--wx-band); }
 .legend i.ovk, .gkey .sw.ovk { background: repeating-linear-gradient(45deg, var(--ov-blue) 0 3px, var(--ov-pink) 3px 6px); }
+:root { --wx-cloud: #9aa6ae; }
+.wxkey { display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: center; margin-top: -4px; }
+.wxkey svg { vertical-align: -2px; margin-right: 3px; }
+.tip .wxt { color: var(--ink-2); font-size: 12px; }
 .wxd { background: var(--wx-band); color: var(--wx); padding: 0 3px; border-radius: 3px; }
 :root { --h1: #cde2fb; --h2: #86b6ef; --h3: #3987e5; --h4: #1c5cab; --h5: #0d366b; --h-ink: #ffffff; --prev: #9aa6ae; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --h1: #0d366b; --h2: #184f95; --h3: #256abf; --h4: #5598e7; --h5: #9ec5f4; --h-ink: #0f151a; --prev: #6c7a84; } }
@@ -589,6 +593,51 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
     (d.bands || []).forEach(b => (d.wx || []).forEach(w => { if (b.i0 <= w.i1 && w.i0 <= b.i1) hit = true; }));
     return hit;
   }
+  // ---------- 天気（気象庁・那覇の天気概況：昼 6〜18時／夜 18〜翌6時） ----------
+  function wxKind(p) {
+    if (/大雨|豪雨|暴風雨/.test(p)) return "hrain";
+    if (/雪|みぞれ|ひょう|あられ/.test(p)) return "snow";
+    if (/雨/.test(p)) return "rain";
+    if (/霧|もや/.test(p)) return "fog";
+    if (/曇/.test(p)) return "cloud";
+    if (/晴/.test(p)) return "sun";
+    return "other";
+  }
+  function wxParse(t) {
+    if (!t) return null;
+    const main = String(t).split(/[、,]/)[0], toks = []; let conn = "";
+    main.split(/(後|時々|一時)/).filter(Boolean).forEach(p => { if (/^(後|時々|一時)$/.test(p)) conn += p; else { toks.push({ k: wxKind(p), conn }); conn = ""; } });
+    return { toks, thunder: /雷/.test(t), text: String(t) };
+  }
+  const wxGlyph = c => /後/.test(c) ? "→" : /時々/.test(c) ? "/" : /一時/.test(c) ? "|" : "";
+  function wxIcon(k, x, y, s) {
+    const r = s / 2;
+    if (k === "sun") return `<circle cx="${x}" cy="${y}" r="${r * .62}" fill="#f2a516"/><circle cx="${x}" cy="${y}" r="${r * .92}" fill="none" stroke="#f2a516" stroke-width="${Math.max(.8, s * .09)}" stroke-dasharray="${s * .14} ${s * .16}"/>`;
+    if (k === "cloud") return `<g fill="var(--wx-cloud)"><circle cx="${x - r * .38}" cy="${y + r * .12}" r="${r * .45}"/><circle cx="${x + r * .12}" cy="${y - r * .18}" r="${r * .55}"/><rect x="${x - r * .82}" y="${y + r * .05}" width="${r * 1.7}" height="${r * .52}" rx="${r * .26}"/></g>`;
+    const drop = (dx, sc, col) => { const cx = x + dx, rr = r * sc; return `<path d="M${cx},${y - rr * 1.25} C${cx + rr * .9},${y - rr * .1} ${cx + rr},${y + rr * .35} ${cx},${y + rr} C${cx - rr},${y + rr * .35} ${cx - rr * .9},${y - rr * .1} ${cx},${y - rr * 1.25} Z" fill="${col}"/>`; };
+    if (k === "rain") return drop(0, .78, "#2f7fd8");
+    if (k === "hrain") return drop(-r * .38, .62, "#1452a3") + drop(r * .4, .62, "#1452a3");
+    if (k === "snow") return `<circle cx="${x}" cy="${y}" r="${r * .7}" fill="#ffffff" stroke="#6aa6e8" stroke-width="1.2"/>`;
+    if (k === "fog") return `<g stroke="var(--wx-cloud)" stroke-width="${Math.max(1, s * .12)}" stroke-linecap="round"><line x1="${x - r * .8}" x2="${x + r * .8}" y1="${y - r * .4}" y2="${y - r * .4}"/><line x1="${x - r * .8}" x2="${x + r * .8}" y1="${y + r * .1}" y2="${y + r * .1}"/><line x1="${x - r * .6}" x2="${x + r * .6}" y1="${y + r * .6}" y2="${y + r * .6}"/></g>`;
+    return `<circle cx="${x}" cy="${y}" r="${r * .6}" fill="none" stroke="var(--muted)" stroke-width="1"/>`;
+  }
+  const wxBolt = (x, y, s) => `<path d="M${x + s * .15},${y - s * .5} L${x - s * .3},${y + s * .08} L${x},${y + s * .08} L${x - s * .15},${y + s * .5} L${x + s * .3},${y - s * .1} L${x},${y - s * .1} Z" fill="#f7c600" stroke="#8a6d00" stroke-width=".6"/>`;
+  // one day cell: main icon, then (when wide enough) the change glyph and the second weather
+  // one half-day cell: main weather large, change glyph + second weather small underneath
+  function wxCell(w, cx, cy, bw) {
+    if (!w || !w.toks.length) return `<text x="${cx}" y="${cy + 3}" text-anchor="middle" style="fill:var(--muted);font-size:9px">-</text>`;
+    const a = w.toks[0], b = w.toks[1], big = Math.min(14, Math.max(8, bw - 3));
+    let g = wxIcon(a.k, cx, cy, big);
+    if (b) {
+      const sm = Math.min(9, Math.max(6, bw * .45)), ly = cy + big / 2 + sm / 2 + 1;
+      if (bw >= 18) g += `<text x="${cx - sm * .55}" y="${ly + 3}" text-anchor="middle" style="fill:var(--ink-2);font-size:8px;font-weight:700">${wxGlyph(b.conn)}</text>` + wxIcon(b.k, cx + sm * .5, ly, sm);
+      else g += wxIcon(b.k, cx, ly, sm);
+    }
+    if (w.thunder) g += wxBolt(cx + big * .5, cy - big * .35, 7);
+    return g;
+  }
+  const wxOf = (S, date) => { const v = (S.doc.weather || {})[date]; return v ? { day: wxParse(v[0]), night: wxParse(v[1]) } : null; };
+  const wxTip = (S, date) => { const v = (S.doc.weather || {})[date]; return v ? `<br><span class="wxt">天気 昼：${esc(v[0] || "-")}<br>　　 夜：${esc(v[1] || "-")}</span>` : ""; };
   const evTip = (S, day) => (S.evByDay[day] || []).map(e => `<br><span class="ev">◆ ${esc(e.label)}</span>`).join("");
   const evText = e => `${md(parseDate(e.date))}${e.to ? "〜" + md(parseDate(e.to)) : ""}`;
 
@@ -628,7 +677,9 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
   // items: [{label, sub, value|null, we, tip}]  null = データなし
   function barChart(el, items, o) {
     if (!el) return;
-    const F = frame(el, o.height || 220, o.sub), { w, h, m } = F;
+    const wxH = o.wxRows && o.wxRows.some(Boolean) ? 58 : 0;
+    const F = frame(el, (o.height || 220) + wxH, o.sub), { w, h, m } = F;
+    m.b += wxH;
     if (o.marks && o.marks.length) m.t = 32;
     const iw = w - m.l - m.r, ih = h - m.t - m.b;
     const { max, step } = niceMax(o.max || Math.max(...items.map(d => d.value || 0), o.target || 0, 1), o.steps || 5);
@@ -681,6 +732,15 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
     (o.camps || []).forEach(c => { g += `<rect x="${m.l + bw * c.i0 + 1}" y="${m.t - 2}" width="${Math.max(2, bw * (c.i1 - c.i0 + 1) - 2)}" height="${ih + 2}" rx="4" fill="var(--camp-fill)" stroke="var(--target)" stroke-width="1.6" stroke-dasharray="3 3"/>`; if (o.campLabels !== false && c.n) { const t = String(c.n), pw = Math.max(17, 6.5 * t.length + 9), px = (m.l + bw * c.i0 + 1) + 3; g += `<rect x="${px}" y="${m.t + 2}" width="${pw}" height="17" rx="8.5" fill="var(--target)"/><text x="${px + pw / 2}" y="${m.t + 14.5}" text-anchor="middle" style="fill:#ffffff;font-weight:700;font-size:10px">${t}</text>`; } });
     if (o.target) g += `<line x1="${m.l}" x2="${w - m.r}" y1="${y(o.target)}" y2="${y(o.target)}" stroke="var(--target)" stroke-width="2"/>`;
     g += `<line x1="${m.l}" x2="${w - m.r}" y1="${m.t + ih}" y2="${m.t + ih}" stroke="var(--ink-2)" stroke-width="1"/>`;
+    if (wxH) {
+      const y1 = m.t + ih + (o.sub ? 34 : 22) + 10, y2 = y1 + 27;
+      g += `<line x1="${m.l}" x2="${w - m.r}" y1="${y1 - 10}" y2="${y1 - 10}" stroke="var(--grid)" stroke-width="1"/><line x1="${m.l}" x2="${w - m.r}" y1="${y2 - 11}" y2="${y2 - 11}" stroke="var(--grid)" stroke-width="1" stroke-dasharray="2 3"/>`;
+      g += `<text x="${m.l - 6}" y="${y1 + 3.5}" text-anchor="end" style="font-size:10px">昼</text><text x="${m.l - 6}" y="${y2 + 3.5}" text-anchor="end" style="font-size:10px">夜</text>`;
+      o.wxRows.forEach((wd, i) => {
+        const cx = m.l + bw * i + bw / 2;
+        g += `<g>${wd && wd.title ? `<title>${esc(wd.title)}</title>` : ""}${wxCell(wd && wd.day, cx, y1, bw)}${wxCell(wd && wd.night, cx, y2, bw)}<rect x="${m.l + bw * i}" y="${y1 - 10}" width="${bw}" height="56" fill="transparent"/></g>`;
+      });
+    }
     el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(o.aria)}">${g}</svg><div class="tip" hidden></div>`;
     attachTip(el, $("svg", el), F, items.length, i => ({ html: items[i].tip, x: m.l + bw * i + bw / 2, y: items[i].value == null ? m.t + ih : y(items[i].value) }));
   }
@@ -851,6 +911,7 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
         <h2>日別売上 <span class="note">バーに触れると詳細</span></h2>
         <div class="legend"><span><i style="background:var(--s1)"></i>平日</span><span><i style="background:var(--s2)"></i>土日・祝日</span><span>– – 1日平均 ${man(S.perDay)}</span>${S.target ? `<span><i class="ln" style="background:var(--target)"></i>目標日販 ${man(S.dailyTarget)}</span>` : ""}<span><i style="background:var(--band);box-shadow:inset 0 0 0 1px var(--line)"></i>連休など</span>${S.events.some(e => e.kind === "campaign") ? `<span><i class="campk"></i>販促キャンペーン期間</span>` : ""}${S.events.some(e => e.kind === "weather") ? `<span><i class="wxk"></i><i class="mk wx">1</i>天候（台風など）</span>` : ""}${bandOverlap(S, S.daily.length) ? `<span><i class="ovk"></i>連休と天候が重なる日</span>` : ""}<span><i class="mk">1</i>暦・トピックス</span></div>
         <div class="chart" id="cDaily"></div>
+        ${S.doc.weather ? `<p class="foot wxkey"><span>天気（気象庁・那覇）：上段＝昼 6〜18時、下段＝夜 18〜翌6時</span><span class="nw"><svg viewBox="-6 -6 12 12" width="12" height="12">${wxIcon("sun", 0, 0, 11)}</svg>晴</span><span class="nw"><svg viewBox="-6 -6 12 12" width="12" height="12">${wxIcon("cloud", 0, 0, 11)}</svg>曇</span><span class="nw"><svg viewBox="-6 -6 12 12" width="12" height="12">${wxIcon("rain", 0, 0, 11)}</svg>雨</span><span class="nw"><svg viewBox="-6 -6 12 12" width="12" height="12">${wxIcon("hrain", 0, 0, 11)}</svg>大雨</span><span class="nw"><svg viewBox="-6 -6 12 12" width="12" height="12">${wxBolt(0, 0, 9)}</svg>雷</span><span class="nw"><b>→</b> 後（のち）</span><span class="nw"><b>/</b> 時々</span><span class="nw"><b>|</b> 一時</span><span>大きいアイコン＝主な天気、下の小さいアイコン＝変わったあとの天気（日付に触れると気象庁の表記を表示）</span></p>` : ""}
         <div class="subchart"><h3><i class="ln" style="background:var(--s3)"></i>日別客数 <span class="note">月平均 ${int(S.cust / Math.max(1, S.daily.length))}人/日・上の売上と日付をそろえて表示</span></h3><div class="chart" id="cDailyCust"></div></div>
         ${targetBox(S)}
         ${campaignBox(S)}
@@ -881,8 +942,8 @@ dialog.pw .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0;
     const after = () => {
       const narrow = $("#cDaily").clientWidth < 520;
       barChart($("#cDaily"), S.daily.map(r => ({ label: String(r.day), sub: DOW[r.dow], value: r.sales, we: r.weekend,
-        tip: `${md(r.dt)}（${DOW[r.dow]}${r.holiday ? "・祝" : ""}）<br><b>${yen(r.sales)}</b><br>客数 ${int(r.customers)}人・客単価 ${yen(r.customers ? r.sales / r.customers : 0)}${S.target ? `<br>目標日販比 ${pctTxt((r.sales / S.dailyTarget - 1) * 100)}` : ""}${evTip(S, r.day)}` })),
-        { aria: "日別売上の棒グラフ", sub: true, avg: S.perDay, target: S.dailyTarget, height: 250, labelEvery: narrow ? 2 : 1, ...eventDeco(S, S.daily.length) });
+        tip: `${md(r.dt)}（${DOW[r.dow]}${r.holiday ? "・祝" : ""}）<br><b>${yen(r.sales)}</b><br>客数 ${int(r.customers)}人・客単価 ${yen(r.customers ? r.sales / r.customers : 0)}${S.target ? `<br>目標日販比 ${pctTxt((r.sales / S.dailyTarget - 1) * 100)}` : ""}${evTip(S, r.day)}${wxTip(S, r.date)}` })),
+        { aria: "日別売上の棒グラフ", sub: true, wxRows: S.daily.map(r => { const v = wxOf(S, r.date); if (v) { const t = S.doc.weather[r.date] || []; v.title = `${md(r.dt)} 昼：${t[0] || "-"}／夜：${t[1] || "-"}`; } return v; }), avg: S.perDay, target: S.dailyTarget, height: 250, labelEvery: narrow ? 2 : 1, ...eventDeco(S, S.daily.length) });
       const narrowWk = $("#cWkSales").clientWidth < 420;
       const wl = S.weeks.map((w, i) => narrowWk ? (i + 1) + "週" : "第" + (i + 1) + "週"), ws = S.weeks.map(w => `${md(w.from)}〜${w.to.getDate()}`);
       const wtip = (w, i) => `第${i + 1}週（${md(w.from)}〜${md(w.to)}・${w.days.length}日）<br>`;
